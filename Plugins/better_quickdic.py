@@ -56,7 +56,7 @@ TEMPLATE = """
     }
     .qd-stat.cracked .num { color: #50fa7b; }
     .qd-stat.failed .num { color: #ff5555; }
-    .qd-stat.cracking .num { color: #f1fa8c; }
+    .qd-stat.cracking .num { color: #ff9500; }
     .qd-stat.total .num { color: var(--accent); }
 
     .qd-page .table-container {
@@ -101,7 +101,7 @@ TEMPLATE = """
     }
     .qd-badge.cracked { background: rgba(80,250,123,0.15); color: #50fa7b; }
     .qd-badge.failed { background: rgba(255,85,85,0.15); color: #ff5555; }
-    .qd-badge.cracking { background: rgba(241,250,140,0.15); color: #f1fa8c; }
+    .qd-badge.cracking { background: rgba(255,149,0,0.15); color: #ff9500; }
     .qd-badge.pending { background: rgba(136,136,136,0.15); color: #888; }
 
     .qd-page .pwd { font-family: 'Courier New', monospace; color: #50fa7b; font-weight: bold; }
@@ -277,9 +277,9 @@ function refresh() {
                 var badge = '<span class="qd-badge ' + h.status + '">' + h.status + '</span>';
                 var action = '';
                 if (h.status === 'pending') {
-                    action = '<button class="btn-crack small" onclick="crackFile(\'' + escHtml(h.file) + '\')">Crack</button>';
+                    action = '<button class="btn-crack small" onclick="crackFile(\\'' + escHtml(h.file) + '\\')">Crack</button>';
                 } else if (h.status === 'failed') {
-                    action = '<button class="btn-crack small retry" onclick="crackFile(\'' + escHtml(h.file) + '\')">Retry</button>';
+                    action = '<button class="btn-crack small retry" onclick="crackFile(\\'' + escHtml(h.file) + '\\')">Retry</button>';
                 } else if (h.password) {
                     action = '<span class="pwd">' + escHtml(h.password) + '</span>';
                 } else {
@@ -320,6 +320,7 @@ class QuickDic(plugins.Plugin):
     def __init__(self):
         self._cracking = set()
         self._cracked = set()
+        self._whitelist = set()
 
     def on_loaded(self):
         logging.info('[quickdic] plugin loaded')
@@ -328,6 +329,18 @@ class QuickDic(plugins.Plugin):
             self.options['face'] = '(·ω·)'
         if 'wordlist_folder' not in self.options:
             self.options['wordlist_folder'] = '/home/pi/wordlists/'
+
+        # load whitelist from pwnagotchi config
+        try:
+            import toml
+            with open('/etc/pwnagotchi/config.toml', 'r') as f:
+                cfg = toml.load(f)
+            for entry in cfg.get('main', {}).get('whitelist', []):
+                self._whitelist.add(entry.strip())
+            if self._whitelist:
+                logging.info('[quickdic] whitelist: %d entries', len(self._whitelist))
+        except Exception as e:
+            logging.warning('[quickdic] could not load whitelist: %s', e)
 
         try:
             subprocess.run(['/usr/bin/aircrack-ng', '--help'],
@@ -347,6 +360,12 @@ class QuickDic(plugins.Plugin):
         wordlists = sorted(glob.glob(os.path.join(folder, '*.txt')))
         return ','.join(wordlists) if wordlists else None
 
+    def _is_whitelisted(self, name, bssid):
+        """Check if network is in pwnagotchi's whitelist."""
+        if not self._whitelist:
+            return False
+        return name in self._whitelist or bssid.upper() in self._whitelist
+
     def _get_handshake_status(self):
         results = []
         for pcap in sorted(glob.glob('/home/pi/handshakes/*.pcap')):
@@ -363,6 +382,9 @@ class QuickDic(plugins.Plugin):
                 bssid = ':'.join(bssid_raw[i:i+2] for i in range(0, 12, 2)).upper()
             else:
                 bssid = bssid_raw
+
+            if self._is_whitelisted(name_part, bssid):
+                continue
 
             cracked_file = pcap + '.cracked'
             failed_file = pcap + '.failed'
@@ -425,6 +447,16 @@ class QuickDic(plugins.Plugin):
         if target == 'all':
             # crack all pending and failed
             for pcap in sorted(glob.glob(os.path.join(handshake_dir, '*.pcap'))):
+                # skip whitelisted networks
+                bname = os.path.basename(pcap).replace('.pcap', '')
+                if '_' in bname:
+                    net_name = bname.rsplit('_', 1)[0]
+                    bssid_hex = bname.rsplit('_', 1)[1]
+                    bssid_fmt = ':'.join(bssid_hex[i:i+2] for i in range(0, 12, 2)).upper() if len(bssid_hex) == 12 else ''
+                else:
+                    net_name, bssid_fmt = bname, ''
+                if self._is_whitelisted(net_name, bssid_fmt):
+                    continue
                 if pcap in self._cracking:
                     continue
                 cracked_file = pcap + '.cracked'
@@ -468,6 +500,16 @@ class QuickDic(plugins.Plugin):
 
         return Response(json.dumps({'message': msg, 'queued': queued}), mimetype='application/json')
 
+    @staticmethod
+    def _bssid_from_filename(filename):
+        """Extract BSSID from pcap filename like NetworkName_aabbccddeeff.pcap"""
+        basename = os.path.basename(filename).replace('.pcap', '')
+        if '_' in basename:
+            hex_part = basename.rsplit('_', 1)[1]
+            if len(hex_part) == 12:
+                return ':'.join(hex_part[i:i+2] for i in range(0, 12, 2)).upper()
+        return None
+
     def _crack_standalone(self, filename):
         """Crack a handshake without agent context (triggered from web UI)."""
         try:
@@ -478,13 +520,16 @@ class QuickDic(plugins.Plugin):
 
             cracked_file = filename + '.cracked'
 
-            result = subprocess.run(
-                ['nice', '-n', '15', '/usr/bin/aircrack-ng',
-                 '-w', wordlists,
-                 '-l', cracked_file,
-                 '-q', filename],
-                capture_output=True, timeout=600
-            )
+            cmd = ['nice', '-n', '15', '/usr/bin/aircrack-ng',
+                   '-w', wordlists,
+                   '-l', cracked_file,
+                   '-q']
+            bssid = self._bssid_from_filename(filename)
+            if bssid:
+                cmd.extend(['-b', bssid])
+            cmd.append(filename)
+
+            result = subprocess.run(cmd, capture_output=True, timeout=600)
 
             output = result.stdout.decode('utf-8', errors='replace').strip()
 
@@ -521,13 +566,16 @@ class QuickDic(plugins.Plugin):
 
             cracked_file = filename + '.cracked'
 
-            result = subprocess.run(
-                ['nice', '-n', '15', '/usr/bin/aircrack-ng',
-                 '-w', wordlists,
-                 '-l', cracked_file,
-                 '-q', filename],
-                capture_output=True, timeout=600
-            )
+            cmd = ['nice', '-n', '15', '/usr/bin/aircrack-ng',
+                   '-w', wordlists,
+                   '-l', cracked_file,
+                   '-q']
+            bssid = self._bssid_from_filename(filename)
+            if bssid:
+                cmd.extend(['-b', bssid])
+            cmd.append(filename)
+
+            result = subprocess.run(cmd, capture_output=True, timeout=600)
 
             output = result.stdout.decode('utf-8', errors='replace').strip()
 
