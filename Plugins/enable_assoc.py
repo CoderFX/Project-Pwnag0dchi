@@ -75,7 +75,7 @@ class enable_assoc(plugins.Plugin):
             pos = self.options['position'].split(',')
             pos = [int(x.strip()) for x in pos]
         else:
-            pos = (209, 111, 30, 59)
+            pos = (160, 111, 30, 59)
 
         try:
             ui.add_element('assoc_count', Touch_Button(
