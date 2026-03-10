@@ -59,18 +59,18 @@ TEMPLATE = """
     .qd-stat.cracking .num { color: #f1fa8c; }
     .qd-stat.total .num { color: var(--accent); }
 
-    .table-container {
+    .qd-page .table-container {
         background-color: var(--card-bg);
         border: 1px solid var(--border-color);
         border-radius: 8px;
         overflow: hidden;
         box-shadow: var(--shadow-md);
     }
-    table {
+    .qd-page table {
         width: 100%;
         border-collapse: collapse;
     }
-    th {
+    .qd-page th {
         padding: 14px 16px;
         text-align: left;
         color: var(--accent);
@@ -81,16 +81,16 @@ TEMPLATE = """
         font-size: 0.85rem;
         border-bottom: 2px solid var(--border-color);
     }
-    td {
+    .qd-page td {
         padding: 12px 16px;
         border-bottom: 1px solid var(--border-color);
         color: var(--text-body);
         font-size: 0.9rem;
     }
-    tbody tr:hover {
+    .qd-page tbody tr:hover {
         background-color: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.05);
     }
-    .badge {
+    .qd-badge {
         display: inline-block;
         padding: 3px 10px;
         border-radius: 12px;
@@ -99,18 +99,18 @@ TEMPLATE = """
         text-transform: uppercase;
         letter-spacing: 0.3px;
     }
-    .badge.cracked { background: rgba(80,250,123,0.15); color: #50fa7b; }
-    .badge.failed { background: rgba(255,85,85,0.15); color: #ff5555; }
-    .badge.cracking { background: rgba(241,250,140,0.15); color: #f1fa8c; }
-    .badge.pending { background: rgba(136,136,136,0.15); color: #888; }
+    .qd-badge.cracked { background: rgba(80,250,123,0.15); color: #50fa7b; }
+    .qd-badge.failed { background: rgba(255,85,85,0.15); color: #ff5555; }
+    .qd-badge.cracking { background: rgba(241,250,140,0.15); color: #f1fa8c; }
+    .qd-badge.pending { background: rgba(136,136,136,0.15); color: #888; }
 
-    .pwd { font-family: 'Courier New', monospace; color: #50fa7b; font-weight: bold; }
-    .empty-state {
+    .qd-page .pwd { font-family: 'Courier New', monospace; color: #50fa7b; font-weight: bold; }
+    .qd-page .empty-state {
         text-align: center;
         padding: 60px 20px;
         color: var(--text-muted);
     }
-    .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+    .qd-page .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
 
     .qd-toolbar {
         display: flex;
@@ -149,14 +149,15 @@ TEMPLATE = """
         .qd-stats { gap: 8px; }
         .qd-stat { min-width: 70px; padding: 8px 12px; }
         .qd-stat .num { font-size: 1.3rem; }
-        th, td { padding: 10px 10px; font-size: 0.82rem; }
-        .bssid-col { display: none; }
+        .qd-page th, .qd-page td { padding: 10px 10px; font-size: 0.82rem; }
+        .qd-page .bssid-col { display: none; }
     }
 </style>
 {% endblock %}
 
 {% block content %}
 <meta name="csrf-token" content="{{ csrf_token() }}">
+<div class="qd-page">
 <div class="qd-header">
     <h2>QuickDic - Handshake Cracker</h2>
 </div>
@@ -190,6 +191,7 @@ TEMPLATE = """
 <div class="empty-state" id="empty" style="display:none;">
     <div class="icon">( ._.)</div>
     <div>No handshakes captured yet. Go hunt some!</div>
+</div>
 </div>
 {% endblock %}
 
@@ -272,7 +274,7 @@ function refresh() {
             var html = '';
             for (var i = 0; i < hs.length; i++) {
                 var h = hs[i];
-                var badge = '<span class="badge ' + h.status + '">' + h.status + '</span>';
+                var badge = '<span class="qd-badge ' + h.status + '">' + h.status + '</span>';
                 var action = '';
                 if (h.status === 'pending') {
                     action = '<button class="btn-crack small" onclick="crackFile(\'' + escHtml(h.file) + '\')">Crack</button>';
