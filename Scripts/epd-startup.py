@@ -56,6 +56,7 @@ def main():
     boot_x = (WIDTH - boot_w) // 2
     draw.text((boot_x, face_y + face_h + 16), boot_text, font=sm_font, fill=0)
 
+    img = img.rotate(180)
     epd.display(epd.getbuffer(img))
     epd.sleep()
 

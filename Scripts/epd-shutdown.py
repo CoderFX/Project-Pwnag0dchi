@@ -65,6 +65,7 @@ def main():
     draw.text((off_x, face_y + face_h + 16), off_text, font=sm_font, fill=0)
 
     # Full refresh persists after power cut
+    img = img.rotate(180)
     epd.display(epd.getbuffer(img))
     epd.sleep()
 
