@@ -20,8 +20,8 @@ class QuickDic(plugins.Plugin):
         'enabled': True,
         'wordlist_folder': '/home/pi/wordlists/',
         'face': '(·ω·)',
-        'api': None,
-        'id': None,
+        'api': '',
+        'id': '',
     }
 
     def __init__(self):
@@ -35,10 +35,6 @@ class QuickDic(plugins.Plugin):
             self.options['face'] = '(·ω·)'
         if 'wordlist_folder' not in self.options:
             self.options['wordlist_folder'] = '/home/pi/wordlists/'
-        if 'api' not in self.options:
-            self.options['api'] = None
-        if 'id' not in self.options:
-            self.options['id'] = None
 
         # check aircrack-ng is installed
         try:
