@@ -610,6 +610,19 @@ class QuickDic(plugins.Plugin):
             self._cracking.discard(filename)
 
     def on_handshake(self, agent, filename, access_point, client_station):
+        # delete handshakes from whitelisted networks (core bug: whitelist
+        # only filters attacks, bettercap still captures passively)
+        bssid = self._bssid_from_filename(filename) or ''
+        basename = os.path.basename(filename).replace('.pcap', '')
+        net_name = basename.rsplit('_', 1)[0] if '_' in basename else basename
+        if self._is_whitelisted(net_name, bssid):
+            logging.info('[quickdic] removing handshake from whitelisted network: %s', basename)
+            try:
+                os.remove(filename)
+            except OSError:
+                pass
+            return
+
         if filename in self._cracked or filename in self._cracking:
             return
 
