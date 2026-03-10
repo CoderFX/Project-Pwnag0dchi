@@ -112,6 +112,39 @@ TEMPLATE = """
     }
     .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
 
+    .qd-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+    .btn-crack {
+        padding: 8px 18px;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--accent);
+        font-family: var(--font-pixel);
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: var(--transition);
+    }
+    .btn-crack:hover { background: var(--accent); color: var(--bg-color); }
+    .btn-crack:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-crack:disabled:hover { background: transparent; color: var(--accent); }
+    .btn-crack.small {
+        padding: 2px 10px;
+        font-size: 0.75rem;
+        border-radius: 4px;
+    }
+    .btn-crack.retry { border-color: #ff5555; color: #ff5555; }
+    .btn-crack.retry:hover { background: #ff5555; color: var(--bg-color); }
+    .toolbar-msg {
+        font-size: 0.82rem;
+        color: var(--text-muted);
+    }
+
     @media screen and (max-width: 600px) {
         .qd-stats { gap: 8px; }
         .qd-stat { min-width: 70px; padding: 8px 12px; }
@@ -123,6 +156,7 @@ TEMPLATE = """
 {% endblock %}
 
 {% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <div class="qd-header">
     <h2>QuickDic - Handshake Cracker</h2>
 </div>
@@ -134,6 +168,11 @@ TEMPLATE = """
     <div class="qd-stat cracking"><div class="num" id="s-active">-</div><div class="label">Active</div></div>
 </div>
 
+<div class="qd-toolbar">
+    <button class="btn-crack" id="btn-crack-all" onclick="crackAll()" disabled>Crack All Pending</button>
+    <span class="toolbar-msg" id="toolbar-msg"></span>
+</div>
+
 <div class="table-container" id="table-wrap">
     <table>
         <thead>
@@ -141,7 +180,7 @@ TEMPLATE = """
                 <th>Network</th>
                 <th class="bssid-col">BSSID</th>
                 <th>Status</th>
-                <th>Password</th>
+                <th>Password / Action</th>
             </tr>
         </thead>
         <tbody id="results"></tbody>
@@ -155,11 +194,52 @@ TEMPLATE = """
 {% endblock %}
 
 {% block script %}
+var csrf = document.querySelector('meta[name="csrf-token"]');
+csrf = csrf ? csrf.getAttribute('content') : '';
+
 function escHtml(s) {
     var d = document.createElement('div');
     d.appendChild(document.createTextNode(s));
     return d.innerHTML;
 }
+
+function crackFile(filename) {
+    fetch('/plugins/better_quickdic/api/crack', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({file: filename})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        document.getElementById('toolbar-msg').textContent = data.message || '';
+        refresh();
+    })
+    .catch(function(e) { console.error('crack error:', e); });
+}
+
+function crackAll() {
+    var btn = document.getElementById('btn-crack-all');
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+    fetch('/plugins/better_quickdic/api/crack', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+        body: JSON.stringify({file: 'all'})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        document.getElementById('toolbar-msg').textContent = data.message || '';
+        btn.textContent = 'Crack All Pending';
+        refresh();
+    })
+    .catch(function(e) {
+        console.error('crack all error:', e);
+        btn.textContent = 'Crack All Pending';
+    });
+}
+
+var _pendingCount = 0;
+var _failedCount = 0;
 
 function refresh() {
     fetch('/plugins/better_quickdic/api/status')
@@ -169,11 +249,16 @@ function refresh() {
             var tbody = document.getElementById('results');
             var empty = document.getElementById('empty');
             var tableWrap = document.getElementById('table-wrap');
+            var btn = document.getElementById('btn-crack-all');
 
             document.getElementById('s-total').textContent = data.total;
             document.getElementById('s-cracked').textContent = data.cracked;
             document.getElementById('s-failed').textContent = data.failed;
             document.getElementById('s-active').textContent = data.cracking;
+
+            _pendingCount = data.pending || 0;
+            _failedCount = data.failed || 0;
+            btn.disabled = (_pendingCount + _failedCount) === 0;
 
             if (hs.length === 0) {
                 tbody.innerHTML = '';
@@ -188,12 +273,21 @@ function refresh() {
             for (var i = 0; i < hs.length; i++) {
                 var h = hs[i];
                 var badge = '<span class="badge ' + h.status + '">' + h.status + '</span>';
-                var pwd = h.password ? '<span class="pwd">' + escHtml(h.password) + '</span>' : '-';
+                var action = '';
+                if (h.status === 'pending') {
+                    action = '<button class="btn-crack small" onclick="crackFile(\'' + escHtml(h.file) + '\')">Crack</button>';
+                } else if (h.status === 'failed') {
+                    action = '<button class="btn-crack small retry" onclick="crackFile(\'' + escHtml(h.file) + '\')">Retry</button>';
+                } else if (h.password) {
+                    action = '<span class="pwd">' + escHtml(h.password) + '</span>';
+                } else {
+                    action = '-';
+                }
                 html += '<tr>'
                     + '<td>' + escHtml(h.name) + '</td>'
                     + '<td class="bssid-col">' + escHtml(h.bssid) + '</td>'
                     + '<td>' + badge + '</td>'
-                    + '<td>' + pwd + '</td>'
+                    + '<td>' + action + '</td>'
                     + '</tr>';
             }
             tbody.innerHTML = html;
@@ -303,15 +397,118 @@ class QuickDic(plugins.Plugin):
 
         if path == 'api/status':
             handshakes = self._get_handshake_status()
-            counts = {'total': len(handshakes), 'cracked': 0, 'failed': 0, 'cracking': 0}
+            counts = {'total': len(handshakes), 'cracked': 0, 'failed': 0, 'cracking': 0, 'pending': 0}
             for h in handshakes:
                 if h['status'] in counts:
                     counts[h['status']] += 1
             data = {**counts, 'handshakes': handshakes}
             return Response(json.dumps(data), mimetype='application/json')
 
+        if path == 'api/crack' and request.method == 'POST':
+            return self._handle_crack_request(request)
+
         from flask import abort
         abort(404)
+
+    def _handle_crack_request(self, request):
+        try:
+            data = request.get_json(force=True)
+        except Exception:
+            return Response(json.dumps({'error': 'bad request'}), status=400, mimetype='application/json')
+
+        target = data.get('file', '')
+        handshake_dir = '/home/pi/handshakes'
+        queued = 0
+
+        if target == 'all':
+            # crack all pending and failed
+            for pcap in sorted(glob.glob(os.path.join(handshake_dir, '*.pcap'))):
+                if pcap in self._cracking:
+                    continue
+                cracked_file = pcap + '.cracked'
+                if os.path.exists(cracked_file):
+                    continue
+                # remove .failed marker so it can be retried
+                failed_file = pcap + '.failed'
+                if os.path.exists(failed_file):
+                    try:
+                        os.remove(failed_file)
+                    except OSError:
+                        pass
+                self._cracked.discard(pcap)
+                self._cracking.add(pcap)
+                self._cracked.add(pcap)
+                t = threading.Thread(target=self._crack_standalone, args=(pcap,), daemon=True)
+                t.start()
+                queued += 1
+            msg = 'Queued %d handshakes for cracking' % queued
+        else:
+            # crack a specific file
+            pcap = os.path.join(handshake_dir, os.path.basename(target))
+            if not os.path.exists(pcap):
+                return Response(json.dumps({'error': 'file not found'}), status=404, mimetype='application/json')
+            if pcap in self._cracking:
+                return Response(json.dumps({'message': 'Already cracking'}), mimetype='application/json')
+            # remove .failed marker for retry
+            failed_file = pcap + '.failed'
+            if os.path.exists(failed_file):
+                try:
+                    os.remove(failed_file)
+                except OSError:
+                    pass
+            self._cracked.discard(pcap)
+            self._cracking.add(pcap)
+            self._cracked.add(pcap)
+            t = threading.Thread(target=self._crack_standalone, args=(pcap,), daemon=True)
+            t.start()
+            msg = 'Cracking %s' % os.path.basename(target)
+            queued = 1
+
+        return Response(json.dumps({'message': msg, 'queued': queued}), mimetype='application/json')
+
+    def _crack_standalone(self, filename):
+        """Crack a handshake without agent context (triggered from web UI)."""
+        try:
+            wordlists = self._get_wordlists()
+            if not wordlists:
+                logging.warning('[quickdic] no wordlists found in %s', self.options['wordlist_folder'])
+                return
+
+            cracked_file = filename + '.cracked'
+
+            result = subprocess.run(
+                ['nice', '-n', '15', '/usr/bin/aircrack-ng',
+                 '-w', wordlists,
+                 '-l', cracked_file,
+                 '-q', filename],
+                capture_output=True, timeout=600
+            )
+
+            output = result.stdout.decode('utf-8', errors='replace').strip()
+
+            if 'KEY FOUND' in output:
+                key_match = re.search(r'\[(.*)\]', output)
+                if key_match:
+                    logging.warning('[quickdic] cracked %s: %s', filename, key_match.group(1))
+            else:
+                logging.info('[quickdic] key not found for %s', filename)
+                try:
+                    with open(filename + '.failed', 'w') as f:
+                        f.write('')
+                except OSError:
+                    pass
+
+        except subprocess.TimeoutExpired:
+            logging.warning('[quickdic] aircrack-ng timed out for %s', filename)
+            try:
+                with open(filename + '.failed', 'w') as f:
+                    f.write('')
+            except OSError:
+                pass
+        except Exception as e:
+            logging.error('[quickdic] error cracking %s: %s', filename, e)
+        finally:
+            self._cracking.discard(filename)
 
     def _crack_handshake(self, agent, filename, access_point, client_station):
         try:
