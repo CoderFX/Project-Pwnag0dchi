@@ -12,7 +12,7 @@ class QuickDic(plugins.Plugin):
     __author__ = 'silentree12th'
     __version__ = '2.0.0'
     __license__ = 'GPL3'
-    __description__ = 'Run a quick dictionary scan against captured handshakes. Optionally send found passwords over to telegram bot.'
+    __description__ = 'Run a quick dictionary scan against captured handshakes.'
     __dependencies__ = {
         'apt': ['aircrack-ng'],
     }
@@ -20,8 +20,6 @@ class QuickDic(plugins.Plugin):
         'enabled': True,
         'wordlist_folder': '/home/pi/wordlists/',
         'face': '(·ω·)',
-        'api': '',
-        'id': '',
     }
 
     def __init__(self):
@@ -87,8 +85,6 @@ class QuickDic(plugins.Plugin):
                     display.set('status', 'Cracked: ' + pwd)
                     display.update(force=True)
 
-                    if self.options.get('api') and self.options.get('id'):
-                        self._send_message(filename, pwd)
             else:
                 logging.info('[quickdic] key not found for %s', filename)
 
